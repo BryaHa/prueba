@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-900 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FleetTrack Pro - Sistema de Rastreo de Flota en Tiempo Real</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            500: '#0284c7',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            900: '#0c4a6e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Leaflet Maps CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+    <!-- Chart.js for Telemetry Charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Custom Leaflet Map Dark Styling */
+        .leaflet-container {
+            background-color: #0f172a !important;
+            font-family: 'Inter', sans-serif;
+        }
+        .dark-tiles .leaflet-tile {
+            filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
+        }
+        .leaflet-popup-content-wrapper {
+            background-color: #1e293b !important;
+            color: #f8fafc !important;
+            border-radius: 0.75rem !important;
+            border: 1px solid #334155;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+        .leaflet-popup-tip {
+            background-color: #1e293b !important;
+        }
+
+        /* Animated Vehicle Marker Pulsing */
+        .vehicle-marker-container {
+            transition: all 0.5s linear;
+        }
+        .pulse-active::after {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            border-radius: 50%;
+            background: rgba(16, 185, 129, 0.4);
+            animation: pulse-ring 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.6); opacity: 0; }
+            100% { transform: scale(0.95); opacity: 0; }
+        }
+
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+
+<body class="h-full flex flex-col overflow-hidden select-none">
+
+    <!-- TOP NAVIGATION BAR -->
+    <header class="h-16 bg-slate-800/90 backdrop-blur border-b border-slate-700/80 px-4 flex items-center justify-between z-30 shrink-0">
+        <!-- Brand & Title -->
+        <div class="flex items-center space-x-3">
+            <div class="bg-gradient-to-tr from-cyan-500 to-blue-600 p-2.5 rounded-xl shadow-lg shadow-cyan-500/20 text-white flex items-center justify-center">
+                <i class="fa-solid font-bold fa-truck-fast text-lg"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold text-white tracking-wide flex items-center gap-2">
+                    FleetTrack <span class="text-xs bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded-full border border-cyan-500/30 font-medium">GPS PRO</span>
+                </h1>
+                <p class="text-xs text-slate-400">Sistema de Monitorización de Flotas en Tiempo Real</p>
+            </div>
+        </div>
+
+        <!-- Simulation Controls Bar -->
+        <div class="hidden lg:flex items-center bg-slate-900/90 border border-slate-700/60 rounded-xl p-1.5 space-x-2">
+            <span class="text-xs text-slate-400 font-medium px-2 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                Simulador GPS:
+            </span>
+            <button id="btn-play" onclick="toggleSimulation()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition">
+                <i class="fa-solid fa-play" id="sim-icon"></i>
+                <span id="sim-text">Pausar</span>
+            </button>
+            <div class="h-4 w-px bg-slate-700"></div>
+            <div class="flex items-center space-x-1">
+                <button onclick="setSimSpeed(1)" id="speed-1" class="px-2 py-1 bg-cyan-600 text-white text-xs rounded-md font-mono font-bold transition">1x</button>
+                <button onclick="setSimSpeed(2)" id="speed-2" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-md font-mono transition">2x</button>
+                <button onclick="setSimSpeed(5)" id="speed-5" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-md font-mono transition">5x</button>
+            </div>
+            <div class="h-4 w-px bg-slate-700"></div>
+            <button onclick="triggerRandomIncident()" class="px-2.5 py-1.5 bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-medium transition flex items-center gap-1">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                Simular Incidencia
+            </button>
+        </div>
+
+        <!-- Global Fleet Summary Quick Pills -->
+        <div class="flex items-center space-x-3">
+            <div class="hidden sm:flex items-center space-x-2 bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-700/50">
+                <i class="fa-solid fa-truck text-cyan-400 text-sm"></i>
+                <div class="text-xs">
+                    <span class="text-slate-400">Total:</span>
+                    <span id="stat-total" class="font-bold text-white ml-1">5</span>
+                </div>
+            </div>
+            <div class="hidden sm:flex items-center space-x-2 bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-700/50">
+                <i class="fa-solid fa-gauge-high text-emerald-400 text-sm"></i>
+                <div class="text-xs">
+                    <span class="text-slate-400">En Ruta:</span>
+                    <span id="stat-active" class="font-bold text-emerald-400 ml-1">0</span>
+                </div>
+            </div>
+            <div class="hidden sm:flex items-center space-x-2 bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-700/50">
+                <i class="fa-solid fa-circle-exclamation text-rose-400 text-sm"></i>
+                <div class="text-xs">
+                    <span class="text-slate-400">Alertas:</span>
+                    <span id="stat-alerts" class="font-bold text-rose-400 ml-1">0</span>
+                </div>
+            </div>
+
+            <!-- Mute Audio Alerts -->
+            <button id="btn-sound" onclick="toggleSound()" class="p-2.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl transition" title="Activar/Desactivar Sonido">
+                <i class="fa-solid fa-volume-high" id="sound-icon"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT AREA -->
+    <div class="flex-1 flex overflow-hidden relative">
+
+        <!-- LEFT SIDEBAR: VEHICLE LIST & FILTERS -->
+        <aside id="sidebar" class="w-80 md:w-96 bg-slate-800/95 backdrop-blur border-r border-slate-700/80 flex flex-col z-20 transition-all duration-300 absolute md:relative inset-y-0 left-0 -translate-x-full md:translate-x-0 shadow-2xl md:shadow-none">
+            
+            <!-- Sidebar Header & Search -->
+            <div class="p-4 border-b border-slate-700/80 space-y-3">
+                <div class="flex items-center justify-between">
+                    <h2 class="font-bold text-slate-100 flex items-center gap-2">
+                        <i class="fa-solid fa-list-check text-cyan-400"></i>
+                        Unidades de Distribución
+                    </h2>
+                    <span class="text-xs font-mono text-slate-400 bg-slate-900/80 px-2 py-0.5 rounded border border-slate-700" id="clock-display">00:00:00</span>
+                </div>
+
+                <!-- Search Input -->
+                <div class="relative">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-sm"></i>
+                    <input type="text" id="search-input" onkeyup="filterVehicles()" placeholder="Buscar por código, chofer o tipo..." class="w-full bg-slate-900/90 text-sm text-slate-200 pl-9 pr-3 py-2 rounded-xl border border-slate-700 focus:outline-none focus:border-cyan-500 placeholder:text-slate-500 transition">
+                </div>
+
+                <!-- Status Filter Pills -->
+                <div class="flex items-center justify-between gap-1 text-xs pt-1">
+                    <button onclick="setFilter('all')" id="filter-all" class="flex-1 py-1 px-2 rounded-lg bg-cyan-600 text-white font-medium transition text-center">Todos</button>
+                    <button onclick="setFilter('en_ruta')" id="filter-en_ruta" class="flex-1 py-1 px-2 rounded-lg bg-slate-900 text-slate-400 hover:bg-slate-700 transition text-center">En Ruta</button>
+                    <button onclick="setFilter('detenido')" id="filter-detenido" class="flex-1 py-1 px-2 rounded-lg bg-slate-900 text-slate-400 hover:bg-slate-700 transition text-center">Detenidos</button>
+                    <button onclick="setFilter('alerta')" id="filter-alerta" class="flex-1 py-1 px-2 rounded-lg bg-slate-900 text-slate-400 hover:bg-slate-700 transition text-center">Alertas</button>
+                </div>
+            </div>
+
+            <!-- Vehicle Scrollable Cards Container -->
+            <div id="vehicle-list" class="flex-1 overflow-y-auto p-3 space-y-2.5">
+                <!-- Vehicle Cards injected via JS dynamic rendering -->
+            </div>
+
+            <!-- Sidebar Footer Controls & Geofence Toggle -->
+            <div class="p-3 bg-slate-900/90 border-t border-slate-700/80 flex items-center justify-between text-xs">
+                <label class="flex items-center space-x-2 cursor-pointer text-slate-300 hover:text-white">
+                    <input type="checkbox" id="chk-geofences" checked onchange="toggleGeofencesVisibility()" class="rounded bg-slate-800 border-slate-700 text-cyan-600 focus:ring-0">
+                    <span>Mostrar Geocercas Hub</span>
+                </label>
+                <button onclick="resetAllRoutes()" class="text-slate-400 hover:text-cyan-400 transition flex items-center gap-1">
+                    <i class="fa-solid fa-rotate-right"></i> Reiniciar
+                </button>
+            </div>
+        </aside>
+
+        <!-- MAP CONTAINER AREA -->
+        <main class="flex-1 relative bg-slate-950 flex flex-col">
+            
+            <!-- Map Instance -->
+            <div id="map" class="w-full h-full z-10"></div>
+
+            <!-- Mobile Sidebar Toggle Overlay Button -->
+            <button onclick="toggleMobileSidebar()" class="md:hidden absolute top-4 left-4 z-20 p-3 bg-slate-800/90 text-slate-100 rounded-xl shadow-xl border border-slate-700">
+                <i class="fa-solid fa-bars text-lg"></i>
+            </button>
+
+            <!-- Map Floating Actions Overlay -->
+            <div class="absolute top-4 right-4 z-20 flex flex-col space-y-2">
+                <button onclick="fitMapToFleet()" class="p-2.5 bg-slate-800/90 hover:bg-slate-700 text-slate-100 rounded-xl border border-slate-700 shadow-xl transition flex items-center justify-center" title="Enfocar Toda la Flota">
+                    <i class="fa-solid fa-expand text-base"></i>
+                </button>
+                <button onclick="toggleFollowMode()" id="btn-follow" class="p-2.5 bg-slate-800/90 hover:bg-slate-700 text-slate-400 rounded-xl border border-slate-700 shadow-xl transition flex items-center justify-center" title="Seguimiento Automático al Vehículo Seleccionado">
+                    <i class="fa-solid fa-crosshairs text-base"></i>
+                </button>
+                <button onclick="toggleMapTheme()" class="p-2.5 bg-slate-800/90 hover:bg-slate-700 text-slate-100 rounded-xl border border-slate-700 shadow-xl transition flex items-center justify-center" title="Cambiar Tema de Mapa">
+                    <i class="fa-solid fa-layer-group text-base"></i>
+                </button>
+            </div>
+
+            <!-- BOTTOM TELEMETRY / DETAIL DRAWER PANEL -->
+            <div id="telemetry-panel" class="absolute bottom-0 inset-x-0 bg-slate-800/95 backdrop-blur border-t border-slate-700/80 z-20 p-4 transition-transform duration-300 transform translate-y-full max-h-[50vh] overflow-y-auto">
+                <div id="telemetry-content" class="max-w-7xl mx-auto">
+                    <!-- Detailed Telemetry dynamic template -->
+                </div>
+            </div>
+
+            <!-- FLOATING REAL-TIME ALERTS NOTIFICATION TOAST FEED -->
+            <div id="toast-container" class="absolute bottom-6 right-6 z-30 space-y-2 max-w-sm w-full pointer-events-none">
+                <!-- Toast Alert Items dynamically created -->
+            </div>
+        </main>
+    </div>
+
+    <!-- ROUTE HISTORY PLAYBACK MODAL -->
+    <div id="history-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col">
+            <div class="p-4 border-b border-slate-700 flex items-center justify-between">
+                <h3 class="font-bold text-slate-100 flex items-center gap-2">
+                    <i class="fa-solid fa-clock-rotate-left text-cyan-400"></i>
+                    Historial de Recorrido & Reporte
+                </h3>
+                <button onclick="closeHistoryModal()" class="text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div class="p-5 space-y-4">
+                <div class="flex items-center justify-between bg-slate-900 p-3 rounded-xl border border-slate-700">
+                    <div>
+                        <span id="modal-vehicle-title" class="font-bold text-cyan-400 text-lg">Camión C-01</span>
+                        <p id="modal-driver-info" class="text-xs text-slate-400">Conductor: Carlos Mendoza | Ruta Lima-Centro</p>
+                    </div>
+                    <button onclick="downloadCSVReport()" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-2 transition">
+                        <i class="fa-solid fa-file-csv text-sm"></i> Exportar Telemetría CSV
+                    </button>
+                </div>
+
+                <!-- Historical Telemetry Log Table -->
+                <div class="max-h-60 overflow-y-auto rounded-xl border border-slate-700">
+                    <table class="w-full text-left text-xs text-slate-300">
+                        <thead class="bg-slate-900 text-slate-400 uppercase font-semibold sticky top-0">
+                            <tr>
+                                <th class="p-2.5">Hora</th>
+                                <th class="p-2.5">Latitud</th>
+                                <th class="p-2.5">Longitud</th>
+                                <th class="p-2.5">Velocidad</th>
+                                <th class="p-2.5">Combustible</th>
+                                <th class="p-2.5">Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-table-body" class="divide-y divide-slate-700/50 bg-slate-800/50">
+                            <!-- Injected history logs -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* ==========================================================================
+           FLEET TRACKING REAL-TIME SIMULATOR ENGINE & MAP APPLICATION
+           ========================================================================== */
+
+        // Master Fleet Vehicle Data & Predefined Distribution GPS Coordinates (Huánuco Routes)
+        const BASE_COORDS = { lat: -9.9306, lng: -76.2422 }; // Hub Central Plaza de Armas Huánuco
+
+        const FLEET_DATA = [
+            {
+                id: 'V-101',
+                name: 'Camión VOLVO FH16',
+                type: 'Camión Pesado',
+                driver: 'Carlos Mendoza',
+                phone: '+51 962 123 456',
+                plate: 'W1A-823',
+                status: 'en_ruta', // 'en_ruta', 'detenido', 'alerta'
+                speed: 42,
+                maxSpeed: 70,
+                fuel: 85, // %
+                odometer: 14230.5, // km
+                temp: 88, // °C
+                battery: 98,
+                lastUpdate: 'Ahora',
+                icon: 'fa-truck',
+                color: '#0284c7', // Cyan blue
+                routeIndex: 0,
+                progress: 0.0,
+                stopsCompleted: 2,
+                totalStops: 5,
+                nextStop: 'Pillco Marca - UNHEVAL',
+                path: [
+                    { lat: -9.9306, lng: -76.2422, name: 'Plaza de Armas Huánuco (Hub Central)' },
+                    { lat: -9.9280, lng: -76.2390, name: 'Parada 1: Puente Calicanto / San Sebastián' },
+                    { lat: -9.9380, lng: -76.2330, name: 'Parada 2: Paucarbamba (Amarilis)' },
+                    { lat: -9.9550, lng: -76.2410, name: 'Parada 3: Cayhuayna Baja' },
+                    { lat: -9.9650, lng: -76.2470, name: 'Parada 4: Campus UNHEVAL / Pillco Marca' },
+                    { lat: -9.9450, lng: -76.2380, name: 'Parada 5: Av. Colector / Amarilis' },
+                    { lat: -9.9306, lng: -76.2422, name: 'Regreso Hub Huánuco' }
+                ],
+                history: []
+            },
+            {
+                id: 'V-102',
+                name: 'Furgón Mercedes Sprinter',
+                type: 'Furgón Reparto',
+                driver: 'Ana Gutiérrez',
+                phone: '+51 962 345 678',
+                plate: 'W2B-456',
+                status: 'en_ruta',
+                speed: 38,
+                maxSpeed: 65,
+                fuel: 62,
+                odometer: 8940.2,
+                temp: 82,
+                battery: 100,
+                lastUpdate: 'Ahora',
+                icon: 'fa-van-shuttle',
+                color: '#10b981', // Emerald
+                routeIndex: 0,
+                progress: 0.15,
+                stopsCompleted: 1,
+                totalStops: 4,
+                nextStop: 'Santa María del Valle',
+                path: [
+                    { lat: -9.9306, lng: -76.2422, name: 'Plaza de Armas Huánuco' },
+                    { lat: -9.9150, lng: -76.2250, name: 'Parada 1: La Esperanza' },
+                    { lat: -9.8850, lng: -76.2120, name: 'Parada 2: Conococha / Desvío Churubamba' },
+                    { lat: -9.8660, lng: -76.2050, name: 'Parada 3: Santa María del Valle Hub' },
+                    { lat: -9.8250, lng: -76.1750, name: 'Parada 4: Puente Rancho' },
+                    { lat: -9.9306, lng: -76.2422, name: 'Regreso Plaza de Armas Huánuco' }
+                ],
+                history: []
+            },
+            {
+                id: 'V-103',
+                name: 'Camión ISUZU NPR',
+                type: 'Carga Mediana',
+                driver: 'Roberto Farfán',
+                phone: '+51 962 888 222',
+                plate: 'W3C-789',
+                status: 'detenido',
+                speed: 0,
+                maxSpeed: 70,
+                fuel: 40,
+                odometer: 22100.8,
+                temp: 75,
+                battery: 94,
+                lastUpdate: 'Hace 2 min',
+                icon: 'fa-truck-ramp-box',
+                color: '#f59e0b', // Amber
+                routeIndex: 0,
+                progress: 0.45,
+                stopsCompleted: 3,
+                totalStops: 5,
+                nextStop: 'Terminal Ambo',
+                path: [
+                    { lat: -9.9306, lng: -76.2422, name: 'Plaza de Armas Huánuco' },
+                    { lat: -9.9800, lng: -76.2420, name: 'Parada 1: Yanag / Las Vegas' },
+                    { lat: -10.0500, lng: -76.2250, name: 'Parada 2: Las Pampas' },
+                    { lat: -10.0830, lng: -76.2150, name: 'Parada 3: Tomayquichua' },
+                    { lat: -10.1310, lng: -76.2020, name: 'Parada 4: Plaza de Armas de Ambo' },
+                    { lat: -9.9306, lng: -76.2422, name: 'Regreso Hub Huánuco' }
+                ],
+                history: []
+            },
+            {
+                id: 'V-104',
+                name: 'Van Eléctrica BYD T3',
+                type: 'Eco-Delivery Urban',
+                driver: 'Sonia Morales',
+                phone: '+51 962 333 111',
+                plate: 'ECO-010',
+                status: 'en_ruta',
+                speed: 29,
+                maxSpeed: 50,
+                fuel: 91, // EV Battery %
+                odometer: 3120.0,
+                temp: 45,
+                battery: 91,
+                lastUpdate: 'Ahora',
+                icon: 'fa-bolt',
+                color: '#a855f7', // Purple
+                routeIndex: 0,
+                progress: 0.05,
+                stopsCompleted: 0,
+                totalStops: 4,
+                nextStop: 'Llicua - Amarilis',
+                path: [
+                    { lat: -9.9306, lng: -76.2422, name: 'Plaza de Armas Huánuco' },
+                    { lat: -9.9250, lng: -76.2220, name: 'Parada 1: Llicua Alta' },
+                    { lat: -9.9380, lng: -76.2330, name: 'Parada 2: Zona Comercial Amarilis' },
+                    { lat: -9.9480, lng: -76.2420, name: 'Parada 3: Marabamba / Pillco Marca' },
+                    { lat: -9.9306, lng: -76.2422, name: 'Regreso Centro Huánuco' }
+                ],
+                history: []
+            },
+            {
+                id: 'V-105',
+                name: 'Camión SCANIA R450',
+                type: 'Trailer Pesado',
+                driver: 'Miguel Barrientos',
+                phone: '+51 962 111 444',
+                plate: 'W5E-550',
+                status: 'alerta',
+                speed: 78,
+                maxSpeed: 60, // Exceeding limit trigger!
+                fuel: 28,
+                odometer: 45100.3,
+                temp: 96,
+                battery: 88,
+                lastUpdate: 'Ahora',
+                icon: 'fa-truck-moving',
+                color: '#ef4444', // Red
+                routeIndex: 0,
+                progress: 0.3,
+                stopsCompleted: 1,
+                totalStops: 3,
+                nextStop: 'Almacén Central Rancho',
+                path: [
+                    { lat: -9.9306, lng: -76.2422, name: 'Hub Central Huánuco' },
+                    { lat: -9.9000, lng: -76.2180, name: 'Parada 1: Vía de Evitamiento Huánuco' },
+                    { lat: -9.8250, lng: -76.1750, name: 'Parada 2: Almacenes Rancho Cruce' },
+                    { lat: -9.7800, lng: -76.1200, name: 'Parada 3: Chinchao Depot' },
+                    { lat: -9.9306, lng: -76.2422, name: 'Regreso Hub Huánuco' }
+                ],
+                history: []
+            }
+        ];
+
+        // System State
+        let map;
+        let markers = {};
+        let routePolylines = {};
+        let geofenceCircles = [];
+        let selectedVehicleId = 'V-101';
+        let currentTelemetryVehicleId = null;
+        let simulationRunning = true;
+        let simulationSpeed = 1;
+        let activeFilter = 'all';
+        let soundEnabled = true;
+        let followMode = false;
+        let currentMapTheme = 'dark';
+        let chartInstance = null;
+        let audioCtx = null;
+
+        // Geofences definition (Hub & Key Logistics Zones in Huánuco)
+        const GEOFENCES = [
+            { name: 'Hub Central Plaza de Armas Huánuco', lat: -9.9306, lng: -76.2422, radius: 600, color: '#0284c7' },
+            { name: 'Zona Comercial Paucarbamba - Amarilis', lat: -9.9380, lng: -76.2330, radius: 800, color: '#f59e0b' },
+            { name: 'Campus Universitario UNHEVAL - Pillco Marca', lat: -9.9650, lng: -76.2470, radius: 900, color: '#10b981' },
+            { name: 'Nodo Logístico Rancho (Cruce Tingo María)', lat: -9.8250, lng: -76.1750, radius: 1200, color: '#a855f7' }
+        ];
+
+        // Safe Leaflet Map Navigation Helpers
+        function safeFlyTo(lat, lng, zoom = 14) {
+            if (!map || isNaN(lat) || isNaN(lng)) return;
+            map.invalidateSize();
+            try {
+                map.flyTo([lat, lng], zoom, { duration: 1.2 });
+            } catch (e) {
+                map.setView([lat, lng], zoom);
+            }
+        }
+
+        function safePanTo(lat, lng) {
+            if (!map || isNaN(lat) || isNaN(lng)) return;
+            try {
+                map.panTo([lat, lng], { animate: true, duration: 0.5 });
+            } catch (e) {
+                map.setView([lat, lng]);
+            }
+        }
+
+        // Initialize Map
+        window.onload = function() {
+            initMap();
+            renderVehicleList();
+            startClock();
+
+            // Handle window resize for Leaflet
+            window.addEventListener('resize', () => {
+                if (map) map.invalidateSize();
+            });
+
+            // Wait for layout rendering to complete before zooming to vehicle
+            setTimeout(() => {
+                if (map) map.invalidateSize();
+                selectVehicle('V-101');
+                startSimulationLoop();
+            }, 200);
+        };
+
+        function initMap() {
+            // Center around Hub
+            map = L.map('map', {
+                center: [BASE_COORDS.lat, BASE_COORDS.lng],
+                zoom: 12,
+                zoomControl: false
+            });
+
+            // Re-add zoom control to bottom right
+            L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+            // Dark Mode Tile Layer (CartoDB Dark Matter)
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap &copy; CARTO',
+                subdomains: 'abcd',
+                maxZoom: 19
+            }).addTo(map);
+
+            // Draw Geofences
+            drawGeofences();
+
+            // Render Vehicles on Map
+            FLEET_DATA.forEach(v => {
+                const startPos = getInterpolatedPosition(v);
+                
+                // Draw route line path
+                const latLngs = v.path.map(p => [p.lat, p.lng]);
+                const polyline = L.polyline(latLngs, {
+                    color: v.color,
+                    weight: 3,
+                    opacity: 0.4,
+                    dashArray: '6, 8'
+                }).addTo(map);
+                routePolylines[v.id] = polyline;
+
+                // Create custom HTML rotated marker
+                const customIcon = createVehicleIcon(v, startPos.heading);
+                const marker = L.marker([startPos.lat, startPos.lng], { icon: customIcon }).addTo(map);
+                
+                marker.bindPopup(`
+                    <div class="p-1 text-xs">
+                        <div class="font-bold text-sm text-cyan-400 mb-1 flex items-center gap-1.5">
+                            <i class="fa-solid ${v.icon}"></i> ${v.name} (${v.id})
+                        </div>
+                        <p class="text-slate-300"><b>Chofer:</b> ${v.driver}</p>
+                        <p class="text-slate-300"><b>Velocidad:</b> <span id="popup-speed-${v.id}">${v.speed}</span> km/h</p>
+                        <p class="text-slate-300"><b>Batería/Fuel:</b> <span id="popup-fuel-${v.id}">${v.fuel}</span>%</p>
+                        <div class="mt-2 pt-2 border-t border-slate-700 flex justify-end">
+                            <button onclick="selectVehicle('${v.id}')" class="px-2 py-1 bg-cyan-600 text-white rounded font-medium hover:bg-cyan-500 text-xs">
+                                Ver Telemetría
+                            </button>
+                        </div>
+                    </div>
+                `);
+
+                marker.on('click', () => {
+                    selectVehicle(v.id);
+                });
+
+                markers[v.id] = marker;
+            });
+        }
+
+        function createVehicleIcon(v, heading) {
+            const statusBg = v.status === 'en_ruta' ? 'bg-emerald-500' : (v.status === 'alerta' ? 'bg-rose-500 animate-bounce' : 'bg-amber-500');
+            const pulseClass = v.status === 'en_ruta' ? 'pulse-active' : '';
+
+            const svgHtml = `
+                <div class="relative vehicle-marker-container ${pulseClass}" style="transform: rotate(${heading || 0}deg);">
+                    <div class="w-10 h-10 rounded-full bg-slate-900 border-2 border-slate-200 shadow-2xl flex items-center justify-center text-white text-base" style="border-color: ${v.color}; color: ${v.color}">
+                        <i class="fa-solid ${v.icon}"></i>
+                    </div>
+                    <span class="absolute -top-1 -right-1 w-3.5 h-3.5 ${statusBg} border-2 border-slate-900 rounded-full"></span>
+                </div>
+            `;
+
+            return L.divIcon({
+                html: svgHtml,
+                className: 'custom-vehicle-pin',
+                iconSize: [40, 40],
+                iconAnchor: [20, 20]
+            });
+        }
+
+        function drawGeofences() {
+            GEOFENCES.forEach(g => {
+                const circle = L.circle([g.lat, g.lng], {
+                    color: g.color,
+                    fillColor: g.color,
+                    fillOpacity: 0.1,
+                    radius: g.radius,
+                    weight: 1.5,
+                    dashArray: '4, 6'
+                }).addTo(map);
+
+                circle.bindTooltip(`<b>Geocerca:</b> ${g.name}`, { permanent: false, direction: 'top' });
+                geofenceCircles.push(circle);
+            });
+        }
+
+        function toggleGeofencesVisibility() {
+            const checked = document.getElementById('chk-geofences').checked;
+            geofenceCircles.forEach(c => {
+                if (checked) map.addLayer(c);
+                else map.removeLayer(c);
+            });
+        }
+
+        // Calculate current lat/lng based on vehicle progress along route waypoints safely
+        function getInterpolatedPosition(v) {
+            if (!v || !v.path || v.path.length < 2) {
+                return { lat: BASE_COORDS.lat, lng: BASE_COORDS.lng, heading: 0, currentSegment: 0, p1: { name: 'Hub Central' }, p2: { name: 'Hub Central' } };
+            }
+
+            const path = v.path;
+            const segments = path.length - 1;
+            
+            // Normalize progress cleanly between 0 and 1
+            let prog = ((v.progress % 1) + 1) % 1;
+            const globalProgress = prog * segments;
+            const segmentIndex = Math.min(Math.floor(globalProgress), segments - 1);
+            const segmentProgress = globalProgress - segmentIndex;
+
+            const p1 = path[segmentIndex] || path[0];
+            const p2 = path[(segmentIndex + 1) % path.length] || path[0];
+
+            const lat = p1.lat + (p2.lat - p1.lat) * segmentProgress;
+            const lng = p1.lng + (p2.lng - p1.lng) * segmentProgress;
+
+            // Proper Degree-to-Radian conversion for bearing math
+            const toRad = deg => deg * Math.PI / 180;
+            const lat1 = toRad(p1.lat), lng1 = toRad(p1.lng);
+            const lat2 = toRad(p2.lat), lng2 = toRad(p2.lng);
+            const dLng = lng2 - lng1;
+
+            const y = Math.sin(dLng) * Math.cos(lat2);
+            const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+            let heading = Math.atan2(y, x) * (180 / Math.PI);
+            heading = (heading + 360) % 360;
+
+            if (isNaN(lat) || isNaN(lng)) {
+                return { lat: BASE_COORDS.lat, lng: BASE_COORDS.lng, heading: 0, currentSegment: 0, p1, p2 };
+            }
+
+            return { lat, lng, heading: isNaN(heading) ? 0 : heading, currentSegment: segmentIndex, p1, p2 };
+        }
+
+        // Main Simulation Loop
+        function startSimulationLoop() {
+            setInterval(() => {
+                if (!simulationRunning) return;
+
+                const timeStamp = new Date().toLocaleTimeString();
+
+                FLEET_DATA.forEach(v => {
+                    if (v.status === 'detenido') {
+                        v.speed = 0;
+                    } else {
+                        // Advance progress along route
+                        const speedFactor = (v.speed / 36000) * simulationSpeed;
+                        v.progress += speedFactor;
+                        if (v.progress >= 1.0) v.progress = 0.0;
+
+                        // Fuel / Battery consumption
+                        if (Math.random() < 0.2) {
+                            v.fuel = Math.max(5, parseFloat((v.fuel - 0.1).toFixed(1)));
+                        }
+
+                        // Odometer increment
+                        v.odometer = parseFloat((parseFloat(v.odometer) + (v.speed / 3600) * simulationSpeed).toFixed(1));
+
+                        // Random small speed fluctuation
+                        const delta = (Math.random() - 0.5) * 4;
+                        v.speed = Math.min(v.maxSpeed + 15, Math.max(15, Math.round(v.speed + delta)));
+
+                        // Speeding alert trigger logic
+                        if (v.speed > v.maxSpeed && v.status !== 'alerta') {
+                            v.status = 'alerta';
+                            triggerToastAlert(v, `¡Exceso de Velocidad! (${v.speed} km/h - Límite: ${v.maxSpeed} km/h)`);
+                        } else if (v.speed <= v.maxSpeed && v.status === 'alerta' && v.fuel > 15) {
+                            v.status = 'en_ruta';
+                        }
+                    }
+
+                    // Get new calculated position
+                    const pos = getInterpolatedPosition(v);
+
+                    // Record telemetry history point
+                    v.history.push({
+                        time: timeStamp,
+                        lat: Number(pos.lat.toFixed(5)),
+                        lng: Number(pos.lng.toFixed(5)),
+                        speed: v.speed,
+                        fuel: v.fuel,
+                        status: v.status
+                    });
+                    if (v.history.length > 50) v.history.shift();
+
+                    // Update Leaflet Marker safely
+                    if (markers[v.id] && !isNaN(pos.lat) && !isNaN(pos.lng)) {
+                        markers[v.id].setLatLng([pos.lat, pos.lng]);
+                        markers[v.id].setIcon(createVehicleIcon(v, pos.heading));
+
+                        const popSpeed = document.getElementById(`popup-speed-${v.id}`);
+                        const popFuel = document.getElementById(`popup-fuel-${v.id}`);
+                        if (popSpeed) popSpeed.innerText = v.speed;
+                        if (popFuel) popFuel.innerText = v.fuel;
+                    }
+
+                    // If currently selected vehicle, follow map center & update telemetry graph
+                    if (selectedVehicleId === v.id) {
+                        if (followMode) {
+                            safePanTo(pos.lat, pos.lng);
+                        }
+                        updateTelemetryPanelValues(v, pos);
+                        updateChartData(v);
+                    }
+                });
+
+                // Refresh UI Counters & Sidebar Cards
+                updateGlobalStats();
+                renderVehicleList();
+
+            }, 1000);
+        }
+
+        // UI Render Functions
+        function renderVehicleList() {
+            const listContainer = document.getElementById('vehicle-list');
+            const searchVal = document.getElementById('search-input').value.toLowerCase();
+
+            const filtered = FLEET_DATA.filter(v => {
+                const matchesSearch = v.name.toLowerCase().includes(searchVal) ||
+                                      v.id.toLowerCase().includes(searchVal) ||
+                                      v.driver.toLowerCase().includes(searchVal);
+                const matchesFilter = activeFilter === 'all' || v.status === activeFilter;
+                return matchesSearch && matchesFilter;
+            });
+
+            listContainer.innerHTML = filtered.map(v => {
+                const isSelected = v.id === selectedVehicleId;
+                const borderAccent = isSelected ? 'border-cyan-500 bg-slate-800' : 'border-slate-700/80 bg-slate-800/40 hover:bg-slate-800/80';
+                
+                let statusBadge = '';
+                if (v.status === 'en_ruta') {
+                    statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> En Ruta
+                    </span>`;
+                } else if (v.status === 'detenido') {
+                    statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span> Detenido
+                    </span>`;
+                } else {
+                    statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center gap-1 animate-pulse">
+                        <i class="fa-solid fa-triangle-exclamation text-[9px]"></i> Alerta
+                    </span>`;
+                }
+
+                return `
+                    <div onclick="selectVehicle('${v.id}')" class="p-3 rounded-xl border ${borderAccent} cursor-pointer transition shadow-md relative group">
+                        <div class="flex items-start justify-between">
+                            <div class="flex items-center space-x-2.5">
+                                <div class="w-9 h-9 rounded-lg flex items-center justify-center text-slate-100 font-bold" style="background-color: ${v.color}20; border: 1px solid ${v.color}50; color: ${v.color}">
+                                    <i class="fa-solid ${v.icon}"></i>
+                                </div>
+                                <div>
+                                    <h4 class="font-bold text-xs text-slate-100 flex items-center gap-1.5">
+                                        ${v.name}
+                                        <span class="text-[10px] text-slate-400 font-mono font-normal">(${v.id})</span>
+                                    </h4>
+                                    <p class="text-[11px] text-slate-400 flex items-center gap-1">
+                                        <i class="fa-solid fa-user-gear text-[10px]"></i> ${v.driver}
+                                    </p>
+                                </div>
+                            </div>
+                            ${statusBadge}
+                        </div>
+
+                        <!-- Mini Telemetry Strip -->
+                        <div class="grid grid-cols-3 gap-2 mt-2.5 pt-2 border-t border-slate-700/50 text-[11px] text-slate-300">
+                            <div class="flex items-center space-x-1">
+                                <i class="fa-solid fa-gauge text-slate-400"></i>
+                                <span><b>${v.speed}</b> km/h</span>
+                            </div>
+                            <div class="flex items-center space-x-1">
+                                <i class="fa-solid fa-gas-pump text-slate-400"></i>
+                                <span><b>${v.fuel}%</b></span>
+                            </div>
+                            <div class="flex items-center space-x-1 justify-end">
+                                <i class="fa-solid fa-road text-slate-400"></i>
+                                <span><b>${v.odometer}</b> km</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function updateGlobalStats() {
+            document.getElementById('stat-total').innerText = FLEET_DATA.length;
+            document.getElementById('stat-active').innerText = FLEET_DATA.filter(v => v.status === 'en_ruta').length;
+            document.getElementById('stat-alerts').innerText = FLEET_DATA.filter(v => v.status === 'alerta').length;
+        }
+
+        function selectVehicle(id) {
+            selectedVehicleId = id;
+            const v = FLEET_DATA.find(item => item.id === id);
+            if (!v) return;
+
+            // Highlight Polyline opacity
+            Object.keys(routePolylines).forEach(key => {
+                if (key === id) {
+                    routePolylines[key].setStyle({ opacity: 0.9, weight: 5 });
+                    routePolylines[key].bringToFront();
+                } else {
+                    routePolylines[key].setStyle({ opacity: 0.2, weight: 2 });
+                }
+            });
+
+            // Center map safely on vehicle
+            const pos = getInterpolatedPosition(v);
+            safeFlyTo(pos.lat, pos.lng, 14);
+
+            // Open Telemetry Bottom Drawer
+            const panel = document.getElementById('telemetry-panel');
+            panel.classList.remove('translate-y-full');
+
+            renderVehicleList();
+            updateTelemetryPanelValues(v, pos);
+            updateChartData(v);
+        }
+
+        function renderTelemetryPanelStructure(v) {
+            const container = document.getElementById('telemetry-content');
+            container.innerHTML = `
+                <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                    
+                    <!-- Left Column: Primary Status & Info -->
+                    <div class="flex items-center space-x-4">
+                        <div class="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-2xl shadow-lg shrink-0" style="background-color: ${v.color}">
+                            <i class="fa-solid ${v.icon}"></i>
+                        </div>
+                        <div>
+                            <div class="flex items-center space-x-2">
+                                <h3 class="text-lg font-bold text-white">${v.name}</h3>
+                                <span class="px-2 py-0.5 rounded text-xs font-mono bg-slate-700 text-slate-300">${v.plate}</span>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-0.5 flex items-center gap-3">
+                                <span><i class="fa-solid fa-user text-cyan-400"></i> ${v.driver} (${v.phone})</span>
+                                <span id="telem-location"><i class="fa-solid fa-location-dot text-rose-400"></i> --</span>
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Middle Column: Live Telemetry Gauges -->
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 w-full md:w-auto">
+                        <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-700/60">
+                            <span class="text-[10px] text-slate-400 uppercase font-semibold">Velocidad</span>
+                            <div id="telem-speed" class="text-lg font-mono font-bold text-emerald-400">${v.speed} <span class="text-xs text-slate-400">km/h</span></div>
+                        </div>
+
+                        <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-700/60">
+                            <span class="text-[10px] text-slate-400 uppercase font-semibold">Batería / Tanque</span>
+                            <div id="telem-fuel" class="text-lg font-mono font-bold text-cyan-400">${v.fuel}%</div>
+                            <div class="w-full bg-slate-800 rounded-full h-1.5 mt-1 overflow-hidden">
+                                <div id="telem-fuel-bar" class="bg-cyan-500 h-1.5 rounded-full" style="width: ${v.fuel}%"></div>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-700/60">
+                            <span class="text-[10px] text-slate-400 uppercase font-semibold">Odómetro</span>
+                            <div id="telem-odo" class="text-lg font-mono font-bold text-slate-200">${v.odometer} <span class="text-xs text-slate-400">km</span></div>
+                        </div>
+
+                        <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-700/60">
+                            <span class="text-[10px] text-slate-400 uppercase font-semibold">Motor Temp</span>
+                            <div id="telem-temp" class="text-lg font-mono font-bold text-amber-400">${v.temp} °C</div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Actions -->
+                    <div class="flex items-center space-x-2 w-full md:w-auto justify-end">
+                        <button onclick="openHistoryModal('${v.id}')" class="px-3.5 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-xl text-xs font-semibold flex items-center gap-2 transition">
+                            <i class="fa-solid fa-clock-rotate-left"></i> Historial
+                        </button>
+                        <button onclick="closeTelemetryPanel()" class="p-2 text-slate-400 hover:text-white rounded-lg">
+                            <i class="fa-solid fa-chevron-down text-base"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Bottom Telemetry Speed Chart -->
+                <div class="mt-4 pt-3 border-t border-slate-700/60 h-28">
+                    <canvas id="speedChart"></canvas>
+                </div>
+            `;
+
+            currentTelemetryVehicleId = v.id;
+            initChart();
+        }
+
+        function updateTelemetryPanelValues(v, pos) {
+            if (currentTelemetryVehicleId !== v.id) {
+                renderTelemetryPanelStructure(v);
+            }
+
+            const speedEl = document.getElementById('telem-speed');
+            const fuelEl = document.getElementById('telem-fuel');
+            const fuelBarEl = document.getElementById('telem-fuel-bar');
+            const odoEl = document.getElementById('telem-odo');
+            const tempEl = document.getElementById('telem-temp');
+            const locEl = document.getElementById('telem-location');
+
+            if (speedEl) speedEl.innerHTML = `${v.speed} <span class="text-xs text-slate-400">km/h</span>`;
+            if (fuelEl) fuelEl.innerText = `${v.fuel}%`;
+            if (fuelBarEl) {
+                fuelBarEl.style.width = `${v.fuel}%`;
+                fuelBarEl.className = `${v.fuel > 30 ? 'bg-cyan-500' : 'bg-rose-500'} h-1.5 rounded-full`;
+            }
+            if (odoEl) odoEl.innerHTML = `${v.odometer} <span class="text-xs text-slate-400">km</span>`;
+            if (tempEl) tempEl.innerText = `${v.temp} °C`;
+            if (locEl && pos.p1) {
+                locEl.innerHTML = `<i class="fa-solid fa-location-dot text-rose-400"></i> ${pos.p1.name}`;
+            }
+        }
+
+        function closeTelemetryPanel() {
+            document.getElementById('telemetry-panel').classList.add('translate-y-full');
+        }
+
+        // Chart.js Telemetry Graph
+        function initChart() {
+            const ctx = document.getElementById('speedChart');
+            if (!ctx) return;
+
+            if (chartInstance) {
+                chartInstance.destroy();
+            }
+
+            const currentV = FLEET_DATA.find(v => v.id === selectedVehicleId);
+            const labels = currentV ? currentV.history.map(h => h.time) : [];
+            const speeds = currentV ? currentV.history.map(h => h.speed) : [];
+
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Histórico Velocidad (km/h)',
+                        data: speeds,
+                        borderColor: '#0284c7',
+                        backgroundColor: 'rgba(2, 132, 199, 0.15)',
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 2,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: { display: false },
+                        y: {
+                            min: 0,
+                            max: 100,
+                            ticks: { color: '#64748b', font: { size: 10 } },
+                            grid: { color: '#334155' }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateChartData(v) {
+            if (!chartInstance) return;
+            chartInstance.data.labels = v.history.map(h => h.time);
+            chartInstance.data.datasets[0].data = v.history.map(h => h.speed);
+            chartInstance.update('none'); // smooth updates without reset
+        }
+
+        // Audio & Toast Alert System
+        function playAlertSound() {
+            if (!soundEnabled) return;
+            try {
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(880, audioCtx.currentTime); // 880Hz A5 note
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.3);
+            } catch(e) {
+                console.log("Audio not allowed yet");
+            }
+        }
+
+        function triggerToastAlert(v, message) {
+            playAlertSound();
+
+            const toastContainer = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = 'bg-slate-800/95 border-l-4 border-rose-500 text-slate-100 p-3.5 rounded-xl shadow-2xl flex items-start space-x-3 transition transform translate-y-2 duration-300 border border-slate-700 pointer-events-auto';
+
+            toast.innerHTML = `
+                <div class="text-rose-400 text-lg pt-0.5">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <div class="flex-1">
+                    <div class="flex items-center justify-between">
+                        <span class="font-bold text-xs text-rose-400">${v.name} (${v.id})</span>
+                        <span class="text-[10px] text-slate-400">${new Date().toLocaleTimeString()}</span>
+                    </div>
+                    <p class="text-xs text-slate-200 mt-0.5 font-medium">${message}</p>
+                </div>
+                <button onclick="this.parentElement.remove()" class="text-slate-500 hover:text-white text-xs">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            `;
+
+            toastContainer.appendChild(toast);
+
+            setTimeout(() => {
+                if (toast.parentElement) toast.remove();
+            }, 6000);
+        }
+
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            const icon = document.getElementById('sound-icon');
+            icon.className = soundEnabled ? 'fa-solid fa-volume-high' : 'fa-solid fa-volume-xmark text-slate-500';
+        }
+
+        // Simulation Control Functions
+        function toggleSimulation() {
+            simulationRunning = !simulationRunning;
+            const btnText = document.getElementById('sim-text');
+            const btnIcon = document.getElementById('sim-icon');
+            const btnPlay = document.getElementById('btn-play');
+
+            if (simulationRunning) {
+                btnText.innerText = 'Pausar';
+                btnIcon.className = 'fa-solid fa-pause';
+                btnPlay.className = 'px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition';
+            } else {
+                btnText.innerText = 'Reanudar';
+                btnIcon.className = 'fa-solid fa-play';
+                btnPlay.className = 'px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition';
+            }
+        }
+
+        function setSimSpeed(speed) {
+            simulationSpeed = speed;
+            [1, 2, 5].forEach(s => {
+                const btn = document.getElementById(`speed-${s}`);
+                if (s === speed) {
+                    btn.className = 'px-2 py-1 bg-cyan-600 text-white text-xs rounded-md font-mono font-bold transition';
+                } else {
+                    btn.className = 'px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-md font-mono transition';
+                }
+            });
+        }
+
+        function triggerRandomIncident() {
+            const randomIndex = Math.floor(Math.random() * FLEET_DATA.length);
+            const v = FLEET_DATA[randomIndex];
+            
+            v.speed = v.maxSpeed + 25;
+            v.status = 'alerta';
+            triggerToastAlert(v, `¡Alerta de Telemetría! Freno intempestivo y exceso de velocidad (${v.speed} km/h).`);
+            selectVehicle(v.id);
+        }
+
+        function setFilter(filter) {
+            activeFilter = filter;
+            ['all', 'en_ruta', 'detenido', 'alerta'].forEach(f => {
+                const btn = document.getElementById(`filter-${f}`);
+                if (f === filter) {
+                    btn.className = 'flex-1 py-1 px-2 rounded-lg bg-cyan-600 text-white font-medium transition text-center';
+                } else {
+                    btn.className = 'flex-1 py-1 px-2 rounded-lg bg-slate-900 text-slate-400 hover:bg-slate-700 transition text-center';
+                }
+            });
+            renderVehicleList();
+        }
+
+        function filterVehicles() {
+            renderVehicleList();
+        }
+
+        function toggleFollowMode() {
+            followMode = !followMode;
+            const btn = document.getElementById('btn-follow');
+            btn.className = followMode 
+                ? 'p-2.5 bg-cyan-600 text-white rounded-xl border border-cyan-500 shadow-xl transition flex items-center justify-center'
+                : 'p-2.5 bg-slate-800/90 hover:bg-slate-700 text-slate-400 rounded-xl border border-slate-700 shadow-xl transition flex items-center justify-center';
+        }
+
+        function fitMapToFleet() {
+            const group = new L.featureGroup(Object.values(markers));
+            map.fitBounds(group.getBounds().pad(0.2));
+        }
+
+        function resetAllRoutes() {
+            FLEET_DATA.forEach(v => {
+                v.progress = 0.0;
+                v.history = [];
+                v.status = 'en_ruta';
+                v.fuel = 95;
+            });
+            renderVehicleList();
+            fitMapToFleet();
+        }
+
+        function toggleMobileSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('-translate-x-full');
+        }
+
+        function toggleMapTheme() {
+            currentMapTheme = currentMapTheme === 'dark' ? 'light' : 'dark';
+            const container = map.getContainer();
+            if (currentMapTheme === 'light') {
+                container.classList.remove('dark-tiles');
+            } else {
+                container.classList.add('dark-tiles');
+            }
+        }
+
+        function startClock() {
+            setInterval(() => {
+                document.getElementById('clock-display').innerText = new Date().toLocaleTimeString();
+            }, 1000);
+        }
+
+        // Route History Modal & CSV Export
+        function openHistoryModal(id) {
+            const v = FLEET_DATA.find(item => item.id === id);
+            if (!v) return;
+
+            document.getElementById('modal-vehicle-title').innerText = `${v.name} (${v.id})`;
+            document.getElementById('modal-driver-info').innerText = `Conductor: ${v.driver} | Placa: ${v.plate}`;
+
+            const tbody = document.getElementById('history-table-body');
+            if (v.history.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-500">Sin registros de telemetría aún...</td></tr>`;
+            } else {
+                tbody.innerHTML = v.history.map(h => `
+                    <tr class="hover:bg-slate-700/30 font-mono">
+                        <td class="p-2.5 text-slate-200">${h.time}</td>
+                        <td class="p-2.5">${h.lat}</td>
+                        <td class="p-2.5">${h.lng}</td>
+                        <td class="p-2.5 font-bold ${h.speed > v.maxSpeed ? 'text-rose-400' : 'text-emerald-400'}">${h.speed} km/h</td>
+                        <td class="p-2.5">${h.fuel}%</td>
+                        <td class="p-2.5">
+                            <span class="px-2 py-0.5 rounded text-[10px] ${h.status === 'alerta' ? 'bg-rose-500/20 text-rose-400' : 'bg-emerald-500/20 text-emerald-400'}">
+                                ${h.status}
+                            </span>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+
+            document.getElementById('history-modal').classList.remove('hidden');
+        }
+
+        function closeHistoryModal() {
+            document.getElementById('history-modal').classList.add('hidden');
+        }
+
+        function downloadCSVReport() {
+            const v = FLEET_DATA.find(item => item.id === selectedVehicleId);
+            if (!v || !v.history.length) return;
+
+            let csvContent = "data:text/csv;charset=utf-8,Hora,Latitud,Longitud,Velocidad(km/h),Combustible(%),Estado\n";
+            v.history.forEach(h => {
+                csvContent += `${h.time},${h.lat},${h.lng},${h.speed},${h.fuel},${h.status}\n`;
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `Reporte_Telemetria_${v.id}_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
